@@ -116,7 +116,7 @@ export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
           break;
       }
     };
-  }, [roomId, language, editorRef]);
+  }, [roomId, language]);
 
   useEffect(() => {
     connect();
