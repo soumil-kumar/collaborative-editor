@@ -4,7 +4,15 @@ import { OTClient } from '../lib/ot';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:4000/ws';
 const RECONNECT_DELAY_MS = [1000, 2000, 4000, 8000]; // Exponential backoff
 
-export function useCollaboration(roomId, language, editorRef) {
+/**
+ * @param roomId       - Room to join
+ * @param language     - Initial language
+ * @param applyRemoteOp - Callback from CodeEditor to apply a remote op.
+ *                        CodeEditor owns this function and sets its own
+ *                        isApplyingRemote guard inside it, preventing echo.
+ * @param onSync       - Called with full document content on initial join
+ */
+export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
   const [connected, setConnected] = useState(false);
   const [users, setUsers] = useState([]);
   const [execResult, setExecResult] = useState(null);
@@ -15,7 +23,11 @@ export function useCollaboration(roomId, language, editorRef) {
   const wsRef = useRef(null);
   const otClientRef = useRef(null);
   const reconnectAttempts = useRef(0);
-  const suppressRemoteRef = useRef(false); // Prevent re-sending applied remote ops
+  // Keep latest callbacks in refs so the WS handler always sees current versions
+  const applyRemoteOpRef = useRef(applyRemoteOp);
+  const onSyncRef = useRef(onSync);
+  useEffect(() => { applyRemoteOpRef.current = applyRemoteOp; }, [applyRemoteOp]);
+  useEffect(() => { onSyncRef.current = onSync; }, [onSync]);
 
   const getToken = () => localStorage.getItem('token');
 
@@ -53,28 +65,23 @@ export function useCollaboration(roomId, language, editorRef) {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
-      const editor = editorRef?.current;
 
       switch (msg.type) {
         case 'sync': {
-          // Full document sync on join
+          // Full document sync on join — tell CodeEditor to reset its content
           setServerVersion(msg.version);
           setUsers(msg.users || []);
           setRoomLanguage(msg.language);
-          if (editor) {
-            suppressRemoteRef.current = true;
-            editor.setValue(msg.content);
-            suppressRemoteRef.current = false;
-          }
+          onSyncRef.current?.(msg.content);
           break;
         }
 
         case 'op': {
-          // Remote op from another user — transform and apply
+          // Remote op from another user — transform, then hand to CodeEditor to apply
           const transformedOp = otClientRef.current.remoteOp(msg.op);
           setServerVersion(msg.version);
-          if (editor && transformedOp) {
-            applyOpToEditor(editor, transformedOp);
+          if (transformedOp) {
+            applyRemoteOpRef.current?.(transformedOp);
           }
           break;
         }
@@ -119,7 +126,6 @@ export function useCollaboration(roomId, language, editorRef) {
   }, [connect]);
 
   const sendLocalOp = useCallback((op) => {
-    if (suppressRemoteRef.current) return;
     otClientRef.current?.localOp(op, serverVersion);
   }, [serverVersion]);
 
@@ -146,33 +152,3 @@ export function useCollaboration(roomId, language, editorRef) {
     sendLanguageChange,
   };
 }
-
-/**
- * Apply an OT op directly to the Monaco editor model without triggering
- * the onChange listener (suppressRemoteRef handles this upstream).
- */
-function applyOpToEditor(editor, op) {
-  const model = editor.getModel();
-  if (!model) return;
-
-  suppressRemoteRef_global = true; // Signal to CodeEditor to skip sending this change
-
-  if (op.type === 'insert') {
-    const pos = model.getPositionAt(op.position);
-    editor.executeEdits('remote', [{
-      range: { startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column },
-      text: op.text,
-    }]);
-  } else if (op.type === 'delete') {
-    const startPos = model.getPositionAt(op.position);
-    const endPos = model.getPositionAt(op.position + op.length);
-    editor.executeEdits('remote', [{
-      range: { startLineNumber: startPos.lineNumber, startColumn: startPos.column, endLineNumber: endPos.lineNumber, endColumn: endPos.column },
-      text: '',
-    }]);
-  }
-}
-
-// Module-level flag to suppress echo of remote edits back to the server
-export let suppressRemoteRef_global = false;
-export function clearSuppressFlag() { suppressRemoteRef_global = false; }

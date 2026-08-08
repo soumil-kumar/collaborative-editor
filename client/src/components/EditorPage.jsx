@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import CodeEditor from './CodeEditor';
 import OutputPanel from './OutputPanel';
 import UserPresence from './UserPresence';
@@ -10,14 +10,10 @@ export default function EditorPage({ roomId, username, onLogout }) {
   const [execRunning, setExecRunning] = useState(false);
   const [users, setUsers] = useState([]);
   const [connected, setConnected] = useState(false);
-  const [runTrigger, setRunTrigger] = useState(null); // Used to imperatively trigger run
 
-  // CodeEditor exposes sendExec via callback pattern
-  const sendExecRef = { current: null };
-
-  const handleRun = () => {
-    sendExecRef.current?.();
-  };
+  // CodeEditor writes its sendExec function into this ref when mounted
+  const sendExecRef = useRef(null);
+  const handleRun = () => sendExecRef.current?.();
 
   return (
     <div className="editor-page">
@@ -38,6 +34,7 @@ export default function EditorPage({ roomId, username, onLogout }) {
             onUsersChange={setUsers}
             onConnectedChange={setConnected}
             onLanguageChange={setLanguage}
+            onSendExecRef={sendExecRef}
           />
           <OutputPanel result={execResult} running={execRunning} />
         </div>
