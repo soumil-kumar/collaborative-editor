@@ -23,6 +23,7 @@ export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
   const wsRef = useRef(null);
   const otClientRef = useRef(null);
   const reconnectAttempts = useRef(0);
+  const intentionalClose = useRef(false); // Prevents reconnect on cleanup unmount
   // Keep latest callbacks in refs so the WS handler always sees current versions
   const applyRemoteOpRef = useRef(applyRemoteOp);
   const onSyncRef = useRef(onSync);
@@ -34,6 +35,13 @@ export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
   const connect = useCallback(() => {
     const token = getToken();
     if (!token || !roomId) return;
+
+    // Close any existing connection before opening a new one
+    if (wsRef.current) {
+      intentionalClose.current = true;
+      wsRef.current.close();
+      intentionalClose.current = false;
+    }
 
     const url = `${WS_URL}?token=${encodeURIComponent(token)}&roomId=${encodeURIComponent(roomId)}&language=${language}`;
     const ws = new WebSocket(url);
@@ -54,8 +62,9 @@ export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
 
     ws.onclose = (event) => {
       setConnected(false);
-      if (event.code === 4001) return; // Auth failure — don't reconnect
-      // Exponential backoff reconnect
+      // Don't reconnect if WE closed it (unmount/cleanup/intentional)
+      if (intentionalClose.current) return;
+      if (event.code === 4001) return; // Auth failure
       const delay = RECONNECT_DELAY_MS[Math.min(reconnectAttempts.current, RECONNECT_DELAY_MS.length - 1)];
       reconnectAttempts.current++;
       setTimeout(connect, delay);
@@ -119,8 +128,10 @@ export function useCollaboration(roomId, language, applyRemoteOp, onSync) {
   }, [roomId, language]);
 
   useEffect(() => {
+    intentionalClose.current = false;
     connect();
     return () => {
+      intentionalClose.current = true;
       wsRef.current?.close();
     };
   }, [connect]);
