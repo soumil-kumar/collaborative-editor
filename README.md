@@ -5,10 +5,12 @@ A web platform where multiple users can join a shared room, collaboratively edit
 ## Key Features
 
 - **Real-Time Collaboration** — Multiple users edit the same document simultaneously using Operational Transform (OT) for conflict-free sync
+- **Collaborative Cursors** — See exactly where other users are typing in real-time with deterministic user colors
+- **Interactive Execution** — Support for providing `stdin` inputs to your programs via a dedicated Terminal Panel
 - **Sandboxed Execution** — Code runs in isolated Docker containers with CPU/memory/PID limits and a 5-second timeout
 - **JWT Authentication** — Secure register/login with bcrypt-hashed passwords
 - **Leader Forwarding** — Any user in a room can trigger execution and all users see the output
-- **Multi-Language Support** — Python 3, JavaScript (Node.js), C++, and Go
+- **Multi-Language Support** — Python 3, JavaScript (Node.js), C++ (optimized with Precompiled Headers), and Go
 - **Live Presence** — See who's in your room in real-time
 
 ## Architecture
@@ -29,7 +31,7 @@ Server (Node.js + Express + ws)
     Docker Sandbox (per request)
     ├── collab-python  (50MB RAM, 1 CPU, 64 PIDs, no network, 5s timeout)
     ├── collab-node
-    ├── collab-cpp
+    ├── collab-cpp     (Optimized with PCH, 256MB RAM for compilation)
     └── collab-go
 ```
 
