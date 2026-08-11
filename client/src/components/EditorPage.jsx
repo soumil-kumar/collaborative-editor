@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import CodeEditor from './CodeEditor';
-import OutputPanel from './OutputPanel';
+import TerminalPanel from './TerminalPanel';
 import UserPresence from './UserPresence';
 import Toolbar from './Toolbar';
 
@@ -10,10 +10,13 @@ export default function EditorPage({ roomId, username, onLogout }) {
   const [execRunning, setExecRunning] = useState(false);
   const [users, setUsers] = useState([]);
   const [connected, setConnected] = useState(false);
+  // stdin is local per-user — not shared across the room (each user provides their own input)
+  const [stdin, setStdin] = useState('');
 
-  // CodeEditor writes its sendExec function into this ref when mounted
+  // CodeEditor writes its sendExec function into this ref when mounted.
+  // sendExec now accepts an optional stdin string argument.
   const sendExecRef = useRef(null);
-  const handleRun = () => sendExecRef.current?.();
+  const handleRun = () => sendExecRef.current?.(stdin);
 
   return (
     <div className="editor-page">
@@ -35,8 +38,14 @@ export default function EditorPage({ roomId, username, onLogout }) {
             onConnectedChange={setConnected}
             onLanguageChange={setLanguage}
             onSendExecRef={sendExecRef}
+            onAuthFailed={onLogout}
           />
-          <OutputPanel result={execResult} running={execRunning} />
+          <TerminalPanel
+            result={execResult}
+            running={execRunning}
+            stdin={stdin}
+            onStdinChange={setStdin}
+          />
         </div>
         <aside className="sidebar">
           <div className="room-info">
