@@ -7,18 +7,6 @@ const { spawn } = require('child_process');
 
 const docker = new Docker();
 
-/**
- * Each language config defines:
- *  - image      : Docker image name
- *  - fileExt    : source file extension
- *  - cmd(codeFile, stdinFile) : returns the Cmd array for docker.createContainer
- *
- * Every command is wrapped in `sh -c "... < stdinFile"` so that user-provided
- * stdin is piped in cleanly without needing Docker's attach/hijack API.
- * An empty stdin.txt (zero bytes) gives programs an immediate EOF on their first
- * read, which is identical to pressing Ctrl-D in a terminal — safe for programs
- * that don't read stdin at all, and correct for those that do.
- */
 const LANGUAGE_CONFIG = {
   python: {
     image: 'collab-python',
@@ -37,13 +25,10 @@ const LANGUAGE_CONFIG = {
   cpp: {
     image: 'collab-cpp',
     fileExt: '.cpp',
-    // -std=c++17 -O2 MUST match the PCH build flags in Dockerfile.cpp
     cmd: (codeFile, stdinFile) => [
       'sh', '-c',
       `g++ -std=c++17 -O2 -o /tmp/prog ${codeFile} && /tmp/prog < ${stdinFile}`,
     ],
-    // g++'s cc1plus needs significantly more RAM than 50 MB during compilation.
-    // 256 MB is safe even for programs that include <bits/stdc++.h>.
     resourceLimits: {
       Memory: 256 * 1024 * 1024,
       MemorySwap: 256 * 1024 * 1024,
@@ -60,19 +45,15 @@ const LANGUAGE_CONFIG = {
   },
 };
 
-// Default resource limits used for all languages unless overridden per-language.
 const DEFAULT_RESOURCE_LIMITS = {
-  Memory: 50 * 1024 * 1024,      // 50 MB
-  MemorySwap: 50 * 1024 * 1024,  // No swap (MemorySwap === Memory disables it)
-  NanoCpus: 1e9,                  // 1 CPU core
-  PidsLimit: 64,                  // Prevent fork bombs
+  Memory: 50 * 1024 * 1024,
+  MemorySwap: 50 * 1024 * 1024,
+  NanoCpus: 1e9,
+  PidsLimit: 64,
 };
 
-const EXECUTION_TIMEOUT_MS = 5000; // 5 seconds
+const EXECUTION_TIMEOUT_MS = 5000;
 
-/**
- * Run user code in an isolated Docker container.
- */
 async function runWithDocker(language, code, stdin = '') {
   const config = LANGUAGE_CONFIG[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
@@ -97,11 +78,11 @@ async function runWithDocker(language, code, stdin = '') {
       Cmd: config.cmd(containerCodePath, containerStdinPath),
       AttachStdout: true,
       AttachStderr: true,
-      NetworkDisabled: true, // No outbound network access
+      NetworkDisabled: true,
       HostConfig: {
         ...limits,
-        ReadonlyRootfs: false, // C++ needs to write /tmp/prog
-        Binds: [`${tmpDir}:/code:ro`], // Mount code + stdin dir read-only
+        ReadonlyRootfs: false,
+        Binds: [`${tmpDir}:/code:ro`],
         AutoRemove: true,
       },
     });
@@ -119,7 +100,7 @@ async function runWithDocker(language, code, stdin = '') {
 
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(async () => {
-        try { await container.kill(); } catch { /* already gone */ }
+        try { await container.kill(); } catch {}
         stderr += '\n[Execution timed out after 5 seconds]';
         resolve();
       }, EXECUTION_TIMEOUT_MS);
@@ -138,22 +119,16 @@ async function runWithDocker(language, code, stdin = '') {
     try {
       const info = await container.inspect();
       exitCode = info.State.ExitCode;
-    } catch {
-      // AutoRemove already cleaned it up — exit code unavailable, default to 0
-    }
+    } catch {}
 
     const executionTime = Date.now() - startTime;
     return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode, executionTime };
 
   } finally {
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
 }
 
-/**
- * Fallback runner using local host process when Docker daemon is not accessible
- * (e.g., standard free cloud host instances).
- */
 async function runLocalProcess(language, code, stdin = '') {
   const config = LANGUAGE_CONFIG[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
@@ -173,7 +148,7 @@ async function runLocalProcess(language, code, stdin = '') {
       if (!p) return;
       const timeout = setTimeout(() => {
         timedOut = true;
-        try { p.kill('SIGKILL'); } catch { /* ignore */ }
+        try { p.kill('SIGKILL'); } catch {}
         stderr += '\n[Execution timed out after 5 seconds]';
       }, EXECUTION_TIMEOUT_MS);
 
@@ -187,13 +162,13 @@ async function runLocalProcess(language, code, stdin = '') {
 
       p.on('error', (err) => {
         clearTimeout(timeout);
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
         resolve({ stdout: '', stderr: `Runtime error: ${err.message}`, exitCode: 1, executionTime: Date.now() - startTime });
       });
 
       p.on('close', (code) => {
         clearTimeout(timeout);
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
         resolve({ stdout: stdout.trim(), stderr: stderr.trim(), exitCode: timedOut ? -1 : (code || 0), executionTime: Date.now() - startTime });
       });
     };
@@ -211,29 +186,26 @@ async function runLocalProcess(language, code, stdin = '') {
       compile.stderr.on('data', (d) => { stderr += d.toString(); });
       compile.on('close', (code) => {
         if (code !== 0) {
-          try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+          try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
           return resolve({ stdout: '', stderr: stderr.trim() || 'Compilation failed', exitCode: code || 1, executionTime: Date.now() - startTime });
         }
         const runProg = spawn(path.join(tmpDir, exeName), [], { cwd: tmpDir });
         setupProc(runProg);
       });
       compile.on('error', (err) => {
-        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
         resolve({ stdout: '', stderr: `g++ compiler not found: ${err.message}`, exitCode: 1, executionTime: Date.now() - startTime });
       });
     } else if (language === 'go') {
       const proc = spawn('go', ['run', codeFile], { cwd: tmpDir });
       setupProc(proc);
     } else {
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
       resolve({ stdout: '', stderr: `Unsupported language: ${language}`, exitCode: 1, executionTime: 0 });
     }
   });
 }
 
-/**
- * Execute user code. Uses Docker if available, otherwise falls back to local runner.
- */
 async function runCode(language, code, stdin = '') {
   try {
     return await runWithDocker(language, code, stdin);
@@ -243,4 +215,3 @@ async function runCode(language, code, stdin = '') {
 }
 
 module.exports = { runCode };
-

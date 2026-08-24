@@ -1,22 +1,3 @@
-/**
- * Client-side Operational Transform
- *
- * Implements the standard 3-state OT client model:
- *
- *   Synchronized ──(local edit)──> AwaitingAck
- *   AwaitingAck ──(local edit)──> AwaitingAckWithBuffer
- *   AwaitingAck ──(server ack)──> Synchronized
- *   AwaitingAckWithBuffer ──(server ack)──> AwaitingAck (re-sends buffer)
- *
- * This ensures that local edits are sent to the server in order,
- * and that incoming server ops are correctly transformed against
- * any unacknowledged local ops before being applied to the editor.
- */
-
-/**
- * Transform opA assuming opB has already been applied.
- * Mirror of the server-side transformOp.
- */
 export function transformOp(opA, opB) {
   if (opA.type === 'insert' && opB.type === 'insert') {
     if (opB.position <= opA.position) {
@@ -54,7 +35,6 @@ export function transformOp(opA, opB) {
   return opA;
 }
 
-// Client OT state machine states
 const SYNCHRONIZED = 'synchronized';
 const AWAITING_ACK = 'awaiting_ack';
 const AWAITING_ACK_WITH_BUFFER = 'awaiting_ack_with_buffer';
@@ -62,15 +42,11 @@ const AWAITING_ACK_WITH_BUFFER = 'awaiting_ack_with_buffer';
 export class OTClient {
   constructor(onSend) {
     this.state = SYNCHRONIZED;
-    this.pendingOp = null;   // Op sent, awaiting ack
-    this.buffer = [];        // Queue of ops waiting while awaiting ack
-    this.onSend = onSend;    // Callback to send op to server
+    this.pendingOp = null;
+    this.buffer = [];
+    this.onSend = onSend;
   }
 
-  /**
-   * Called when the user makes a local edit.
-   * Sends op immediately if synchronized, or queues it if awaiting ack.
-   */
   localOp(op, serverVersion) {
     if (this.state === SYNCHRONIZED) {
       this.pendingOp = op;
@@ -82,9 +58,6 @@ export class OTClient {
     }
   }
 
-  /**
-   * Called when server acks our pending op with the new version.
-   */
   serverAck(newVersion) {
     if (this.buffer.length > 0) {
       const nextOp = this.buffer.shift();
@@ -97,11 +70,6 @@ export class OTClient {
     }
   }
 
-  /**
-   * Called when a remote op arrives from the server.
-   * Transforms it against any unacknowledged local ops before applying.
-   * Returns the transformed op to apply to the local editor.
-   */
   remoteOp(serverOp) {
     if (this.state === SYNCHRONIZED) {
       return serverOp;
@@ -128,4 +96,3 @@ export class OTClient {
     return transformed;
   }
 }
-
