@@ -1,6 +1,10 @@
 import { useState } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const API_URL = import.meta.env.VITE_API_URL || (
+  typeof window !== 'undefined' && window.location.port === '5173'
+    ? 'http://localhost:4000'
+    : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4000')
+);
 
 export default function AuthPage({ onAuth }) {
   const [mode, setMode] = useState('login'); // 'login' | 'register'

@@ -87,6 +87,19 @@ function handleConnection(ws, req) {
         break;
       }
 
+      case 'cursor': {
+        // Client sends: { type: 'cursor', position: number }
+        // Relay to all other clients so they can render a cursor decoration
+        const { position } = msg;
+        if (typeof position !== 'number') return;
+        broadcast(room, ws, {
+          type: 'cursor',
+          username: user.username,
+          position,
+        });
+        break;
+      }
+
       case 'language_change': {
         // Client asks to change the language for this room
         const { language: newLang } = msg;
@@ -104,12 +117,14 @@ function handleConnection(ws, req) {
         // Client triggers code execution
         const code = room.document.getSnapshot().content;
         const lang = msg.language || room.language;
+        // stdin is optional — empty string means programs get immediate EOF on stdin reads
+        const stdin = typeof msg.stdin === 'string' ? msg.stdin : '';
 
         // Notify all clients that execution is starting
         broadcastAll(room, { type: 'exec_start', triggeredBy: user.username });
 
         try {
-          const result = await runCode(lang, code);
+          const result = await runCode(lang, code, stdin);
           broadcastAll(room, {
             type: 'exec_result',
             stdout: result.stdout,

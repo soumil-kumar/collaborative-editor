@@ -1,3 +1,5 @@
+import { userColor } from '../lib/userColor';
+
 export default function UserPresence({ users, currentUser }) {
   return (
     <div className="user-presence">
@@ -5,7 +7,7 @@ export default function UserPresence({ users, currentUser }) {
       <ul className="user-list">
         {users.map((u) => (
           <li key={u} className="user-item">
-            <span className="user-avatar" style={{ background: stringToColor(u) }}>
+            <span className="user-avatar" style={{ background: userColor(u) }}>
               {u[0].toUpperCase()}
             </span>
             <span className="user-name">
@@ -17,13 +19,4 @@ export default function UserPresence({ users, currentUser }) {
       </ul>
     </div>
   );
-}
-
-function stringToColor(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 65%, 45%)`;
 }

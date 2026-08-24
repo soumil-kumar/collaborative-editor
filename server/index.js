@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 const { WebSocketServer } = require('ws');
 const authRoutes = require('./routes/auth');
 const { handleConnection } = require('./ws/handler');
@@ -15,6 +17,18 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// Serve frontend in production if built
+const clientDistPath = path.join(__dirname, '../client/dist');
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/auth') || req.path.startsWith('/ws') || req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 // HTTP server (shared between Express and WebSocket)
 const server = http.createServer(app);
@@ -34,3 +48,4 @@ server.listen(PORT, () => {
 });
 
 module.exports = { app, server };
+
