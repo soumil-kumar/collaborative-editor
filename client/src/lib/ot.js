@@ -63,26 +63,22 @@ export class OTClient {
   constructor(onSend) {
     this.state = SYNCHRONIZED;
     this.pendingOp = null;   // Op sent, awaiting ack
-    this.bufferOp = null;    // Op queued while awaiting ack
+    this.buffer = [];        // Queue of ops waiting while awaiting ack
     this.onSend = onSend;    // Callback to send op to server
   }
 
   /**
    * Called when the user makes a local edit.
-   * Sends op immediately if synchronized, or buffers it.
-   * Returns the op as-is (already applied locally by Monaco).
+   * Sends op immediately if synchronized, or queues it if awaiting ack.
    */
   localOp(op, serverVersion) {
     if (this.state === SYNCHRONIZED) {
       this.pendingOp = op;
       this.state = AWAITING_ACK;
       this.onSend(op, serverVersion);
-    } else if (this.state === AWAITING_ACK) {
-      this.bufferOp = op;
-      this.state = AWAITING_ACK_WITH_BUFFER;
     } else {
-      // Compose buffer op with new op (simplification: just overwrite for now)
-      this.bufferOp = op;
+      this.buffer.push(op);
+      this.state = AWAITING_ACK_WITH_BUFFER;
     }
   }
 
@@ -90,14 +86,14 @@ export class OTClient {
    * Called when server acks our pending op with the new version.
    */
   serverAck(newVersion) {
-    if (this.state === AWAITING_ACK) {
+    if (this.buffer.length > 0) {
+      const nextOp = this.buffer.shift();
+      this.pendingOp = nextOp;
+      this.state = this.buffer.length > 0 ? AWAITING_ACK_WITH_BUFFER : AWAITING_ACK;
+      this.onSend(nextOp, newVersion);
+    } else {
       this.pendingOp = null;
       this.state = SYNCHRONIZED;
-    } else if (this.state === AWAITING_ACK_WITH_BUFFER) {
-      this.onSend(this.bufferOp, newVersion);
-      this.pendingOp = this.bufferOp;
-      this.bufferOp = null;
-      this.state = AWAITING_ACK;
     }
   }
 
@@ -110,19 +106,26 @@ export class OTClient {
     if (this.state === SYNCHRONIZED) {
       return serverOp;
     }
-    if (this.state === AWAITING_ACK) {
-      const transformed = transformOp(serverOp, this.pendingOp);
-      this.pendingOp = transformOp(this.pendingOp, serverOp);
-      return transformed;
+
+    let transformed = serverOp;
+
+    if (this.pendingOp) {
+      const nextPending = transformOp(this.pendingOp, transformed);
+      transformed = transformOp(transformed, this.pendingOp);
+      this.pendingOp = nextPending;
     }
-    if (this.state === AWAITING_ACK_WITH_BUFFER) {
-      let op = serverOp;
-      op = transformOp(op, this.pendingOp);
-      op = transformOp(op, this.bufferOp);
-      this.pendingOp = transformOp(this.pendingOp, serverOp);
-      this.bufferOp = transformOp(this.bufferOp, transformOp(serverOp, this.pendingOp));
-      return op;
+
+    if (this.buffer.length > 0) {
+      const nextBuffer = [];
+      for (const bufferedOp of this.buffer) {
+        const nextBuffered = transformOp(bufferedOp, transformed);
+        transformed = transformOp(transformed, bufferedOp);
+        nextBuffer.push(nextBuffered);
+      }
+      this.buffer = nextBuffer;
     }
-    return serverOp;
+
+    return transformed;
   }
 }
+
