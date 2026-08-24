@@ -1,3 +1,4 @@
+// Transforms opA against an already applied opB
 function transformOp(opA, opB) {
   if (opA.type === 'insert' && opB.type === 'insert') {
     if (opB.position <= opA.position) {
@@ -33,6 +34,7 @@ function transformOp(opA, opB) {
     if (opB.position >= opA.position + opA.length) {
       return opA;
     }
+    // Handle overlapping deletion ranges
     const overlapStart = Math.max(opA.position, opB.position);
     const overlapEnd = Math.min(opA.position + opA.length, opB.position + opB.length);
     const overlap = overlapEnd - overlapStart;
@@ -54,6 +56,7 @@ function applyOp(doc, op) {
   return doc;
 }
 
+// Single source of truth per collaborative room
 class DocumentState {
   constructor(initialContent = '') {
     this.content = initialContent;
@@ -63,6 +66,7 @@ class DocumentState {
 
   applyClientOp(op, baseVersion) {
     let transformed = op;
+    // Catch up op against any newer concurrent ops committed since baseVersion
     for (let i = baseVersion; i < this.history.length; i++) {
       transformed = transformOp(transformed, this.history[i].op);
     }
@@ -75,6 +79,7 @@ class DocumentState {
     this.version++;
     this.history.push({ op: transformed, version: this.version });
 
+    // Keep history bounded
     if (this.history.length > 1000) {
       this.history = this.history.slice(this.history.length - 500);
     }

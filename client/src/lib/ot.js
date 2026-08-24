@@ -1,3 +1,4 @@
+// Client-side mirror of server operational transform
 export function transformOp(opA, opB) {
   if (opA.type === 'insert' && opB.type === 'insert') {
     if (opB.position <= opA.position) {
@@ -47,17 +48,20 @@ export class OTClient {
     this.onSend = onSend;
   }
 
+  // Handle local keystroke from Monaco editor
   localOp(op, serverVersion) {
     if (this.state === SYNCHRONIZED) {
       this.pendingOp = op;
       this.state = AWAITING_ACK;
       this.onSend(op, serverVersion);
     } else {
+      // Buffer in-flight edits while waiting for server ACK
       this.buffer.push(op);
       this.state = AWAITING_ACK_WITH_BUFFER;
     }
   }
 
+  // Server acknowledged our pending operation
   serverAck(newVersion) {
     if (this.buffer.length > 0) {
       const nextOp = this.buffer.shift();
@@ -70,6 +74,7 @@ export class OTClient {
     }
   }
 
+  // Transform incoming server op against all local in-flight ops before applying
   remoteOp(serverOp) {
     if (this.state === SYNCHRONIZED) {
       return serverOp;

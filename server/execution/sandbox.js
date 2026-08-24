@@ -45,15 +45,17 @@ const LANGUAGE_CONFIG = {
   },
 };
 
+// Default sandbox container constraints
 const DEFAULT_RESOURCE_LIMITS = {
-  Memory: 50 * 1024 * 1024,
-  MemorySwap: 50 * 1024 * 1024,
-  NanoCpus: 1e9,
-  PidsLimit: 64,
+  Memory: 50 * 1024 * 1024,      // 50 MB
+  MemorySwap: 50 * 1024 * 1024,  // Disable swap
+  NanoCpus: 1e9,                  // 1 CPU core
+  PidsLimit: 64,                  // Prevent fork bombs
 };
 
 const EXECUTION_TIMEOUT_MS = 5000;
 
+// Execute code in an isolated Docker container with strict CPU/memory/network caps
 async function runWithDocker(language, code, stdin = '') {
   const config = LANGUAGE_CONFIG[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
@@ -62,6 +64,7 @@ async function runWithDocker(language, code, stdin = '') {
   const codeFile = path.join(tmpDir, `main${config.fileExt}`);
   fs.writeFileSync(codeFile, code, 'utf8');
 
+  // Stdin file allows redirection without holding raw streaming sockets
   const stdinFile = path.join(tmpDir, 'stdin.txt');
   fs.writeFileSync(stdinFile, stdin, 'utf8');
 
@@ -129,6 +132,7 @@ async function runWithDocker(language, code, stdin = '') {
   }
 }
 
+// Fallback execution when Docker socket is not available on standard host
 async function runLocalProcess(language, code, stdin = '') {
   const config = LANGUAGE_CONFIG[language];
   if (!config) throw new Error(`Unsupported language: ${language}`);
